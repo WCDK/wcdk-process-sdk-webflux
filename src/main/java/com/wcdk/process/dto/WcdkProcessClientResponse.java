@@ -27,6 +27,8 @@ public class WcdkProcessClientResponse {
 
     private String callbackUrl;
 
+    private String serviceName;
+
     private String authFlg;
 
     private String clientStatus;

@@ -22,6 +22,8 @@ public class WcdkProcessConnectionConfig {
 
     private final String callbackUrl;
 
+    private final String serviceName;
+
     private final String username;
 
     private final String password;

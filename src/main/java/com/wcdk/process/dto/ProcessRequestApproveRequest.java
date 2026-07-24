@@ -20,5 +20,7 @@ public class ProcessRequestApproveRequest {
 
     private Boolean approved;
 
+    private String approvalAction;
+
     private String comment;
 }

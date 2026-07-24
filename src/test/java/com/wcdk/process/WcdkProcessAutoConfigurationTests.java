@@ -19,6 +19,7 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -143,7 +144,35 @@ class WcdkProcessAutoConfigurationTests {
     }
 
     @Test
-    void shouldInvokeAnnotatedMethodWithPayloadRequestParameter() {
+    void shouldAcceptRegisterCallbackWithServerEventPayload() {
+        contextRunner.withPropertyValues("wcdk.process.auth-flg=WCDK")
+                .run(context -> {
+                    WebTestClient webTestClient = WebTestClient.bindToApplicationContext(context).build();
+                    webTestClient.post()
+                            .uri("/wcdk_process/register_bak")
+                            .header("WCDK_AUTH", "WCDK")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .bodyValue("""
+                                    {
+                                      "clientId":"wcdk-process-demo",
+                                      "clientName":"wcdk-process-demo",
+                                      "processBeanName":"register_bak",
+                                      "eventType":"REGISTER_SUCCESS",
+                                      "message":"register success",
+                                      "eventTime":"2026-07-23T16:00:00",
+                                      "errorMessage":null,
+                                      "futureField":"future value"
+                                    }
+                                    """)
+                            .exchange()
+                            .expectStatus().isOk()
+                            .expectBody()
+                            .jsonPath("$.code").isEqualTo(200);
+                });
+    }
+
+    @Test
+    void shouldInvokeAnnotatedMethodWithRequestParameter() {
         contextRunner.withUserConfiguration(PayloadTestConfiguration.class)
                 .run(context -> {
                     WebTestClient webTestClient = WebTestClient.bindToApplicationContext(context).build();
@@ -152,11 +181,9 @@ class WcdkProcessAutoConfigurationTests {
                             .contentType(MediaType.APPLICATION_JSON)
                             .bodyValue("""
                                     {
-                                      "payload":{
-                                        "processNo":"LC-001",
-                                        "formData":{
-                                          "amount":100
-                                        }
+                                      "businessKey":"LC-001",
+                                      "relatedFormData":{
+                                        "amount":100
                                       }
                                     }
                                     """)
@@ -167,8 +194,60 @@ class WcdkProcessAutoConfigurationTests {
                             .jsonPath("$.data").isEqualTo("LC-001");
 
                     PayloadProcessBeanHandler handler = context.getBean(PayloadProcessBeanHandler.class);
-                    assertThat(handler.getLastRequest().get().getProcessNo()).isEqualTo("LC-001");
-                    assertThat(handler.getLastRequest().get().getFormData()).containsEntry("amount", 100);
+                    assertThat(handler.getLastRequest().get().getBusinessKey()).isEqualTo("LC-001");
+                    assertThat(handler.getLastRequest().get().getRelatedFormData()).containsEntry("amount", 100);
+                });
+    }
+
+    @Test
+    void shouldBindTaskInfoFieldsInCallbackPayload() {
+        contextRunner.withUserConfiguration(TaskPayloadTestConfiguration.class)
+                .run(context -> {
+                    WebTestClient webTestClient = WebTestClient.bindToApplicationContext(context).build();
+                    webTestClient.post()
+                            .uri("/wcdk_process/taskPayloadProcess")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .bodyValue("""
+                                    {
+                                      "businessKey":"BUS-004",
+                                      "currentTasks":[
+                                        {
+                                          "taskId":"task-001",
+                                          "taskDefinitionKey":"approve",
+                                          "taskName":"审批",
+                                          "relatedFormId":1001,
+                                          "relatedFormName":"采购申请",
+                                          "relatedFormData":{"amount":1200},
+                                          "relatedForms":[{"name":"附件表单"}],
+                                          "eventTime":"2026-07-23T17:00:00"
+                                        }
+                                      ],
+                                      "nextTasks":[
+                                        {
+                                          "taskId":"task-002",
+                                          "taskDefinitionKey":"archive",
+                                          "taskName":"归档",
+                                          "relatedFormId":1002
+                                        }
+                                      ]
+                                    }
+                                    """)
+                            .exchange()
+                            .expectStatus().isOk()
+                            .expectBody()
+                            .jsonPath("$.code").isEqualTo(200)
+                            .jsonPath("$.data").isEqualTo(1001);
+
+                    TaskPayloadProcessBeanHandler handler = context.getBean(TaskPayloadProcessBeanHandler.class);
+                    assertThat(handler.getLastEvent().get().getCurrentTasks()).hasSize(1);
+                    assertThat(handler.getLastEvent().get().getCurrentTasks().getFirst().getRelatedFormData())
+                            .containsEntry("amount", 1200);
+                    assertThat(handler.getLastEvent().get().getCurrentTasks().getFirst().getRelatedForms())
+                            .containsExactly(Map.of("name", "附件表单"));
+                    assertThat(handler.getLastEvent().get().getCurrentTasks().getFirst().getEventTime())
+                            .isEqualTo(LocalDateTime.of(2026, 7, 23, 17, 0));
+                    assertThat(handler.getLastEvent().get().getNextTasks().getFirst().getRelatedFormId())
+                            .isEqualTo(1002L);
                 });
     }
 
@@ -246,7 +325,7 @@ class WcdkProcessAutoConfigurationTests {
         @ProcessBean("payloadProcess")
         public String handle(PayloadRequest request) {
             lastRequest.set(request);
-            return request.getProcessNo();
+            return request.getBusinessKey();
         }
 
         public AtomicReference<PayloadRequest> getLastRequest() {
@@ -271,26 +350,50 @@ class WcdkProcessAutoConfigurationTests {
         }
     }
 
+    @Configuration(proxyBeanMethods = false)
+    static class TaskPayloadTestConfiguration {
+
+        @Bean
+        TaskPayloadProcessBeanHandler taskPayloadProcessBeanHandler() {
+            return new TaskPayloadProcessBeanHandler();
+        }
+    }
+
+    static class TaskPayloadProcessBeanHandler {
+
+        private final AtomicReference<WcdkProcessConnectionEvent> lastEvent = new AtomicReference<>();
+
+        @ProcessBean("taskPayloadProcess")
+        public Mono<Long> handle(WcdkProcessConnectionEvent event) {
+            lastEvent.set(event);
+            return Mono.just(event.getCurrentTasks().getFirst().getRelatedFormId());
+        }
+
+        public AtomicReference<WcdkProcessConnectionEvent> getLastEvent() {
+            return lastEvent;
+        }
+    }
+
     static class PayloadRequest {
 
-        private String processNo;
+        private String businessKey;
 
-        private Map<String, Object> formData;
+        private Map<String, Object> relatedFormData;
 
-        public String getProcessNo() {
-            return processNo;
+        public String getBusinessKey() {
+            return businessKey;
         }
 
-        public void setProcessNo(String processNo) {
-            this.processNo = processNo;
+        public void setBusinessKey(String businessKey) {
+            this.businessKey = businessKey;
         }
 
-        public Map<String, Object> getFormData() {
-            return formData;
+        public Map<String, Object> getRelatedFormData() {
+            return relatedFormData;
         }
 
-        public void setFormData(Map<String, Object> formData) {
-            this.formData = formData;
+        public void setRelatedFormData(Map<String, Object> relatedFormData) {
+            this.relatedFormData = relatedFormData;
         }
     }
 }

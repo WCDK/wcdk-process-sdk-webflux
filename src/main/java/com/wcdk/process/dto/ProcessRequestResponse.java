@@ -36,6 +36,8 @@ public class ProcessRequestResponse {
 
     private String currentTaskName;
 
+    private List<ProcessTaskInfoResponse> currentTasks;
+
     private String processDefinitionKey;
 
     private String processDefinitionId;

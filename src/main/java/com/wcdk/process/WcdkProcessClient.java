@@ -7,6 +7,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wcdk.process.common.ApiResponse;
 import com.wcdk.process.dto.WcdkProcessClientRegisterRequest;
 import com.wcdk.process.dto.WcdkProcessConnectionEvent;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.cloud.client.ServiceInstance;
+import org.springframework.cloud.client.loadbalancer.DefaultRequest;
+import org.springframework.cloud.client.loadbalancer.DefaultRequestContext;
+import org.springframework.cloud.client.loadbalancer.Response;
+import org.springframework.cloud.client.loadbalancer.reactive.ReactiveLoadBalancer;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
@@ -18,6 +24,7 @@ import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -35,6 +42,8 @@ public class WcdkProcessClient {
 
     private static final String CALLBACK_PATH = "/sdk/wcdkprocess/callback";
 
+    private static final String LOAD_BALANCER_SCHEME = "lb://";
+
     private final WebClient webClient;
 
     private final ObjectMapper objectMapper;
@@ -43,14 +52,25 @@ public class WcdkProcessClient {
 
     private final WcdkProcessServerConfig serverConfig;
 
+    private final ObjectProvider<ReactiveLoadBalancer.Factory<ServiceInstance>> loadBalancerFactoryProvider;
+
     public WcdkProcessClient(WebClient webClient,
                              ObjectMapper objectMapper,
                              WcdkProcessConnectionConfig connectionConfig,
-                             WcdkProcessServerConfig serverConfig) {
+                             WcdkProcessServerConfig serverConfig,
+                             ObjectProvider<ReactiveLoadBalancer.Factory<ServiceInstance>> loadBalancerFactoryProvider) {
         this.webClient = webClient;
         this.objectMapper = objectMapper;
         this.connectionConfig = connectionConfig;
         this.serverConfig = serverConfig;
+        this.loadBalancerFactoryProvider = loadBalancerFactoryProvider;
+    }
+
+    public WcdkProcessClient(WebClient webClient,
+                             ObjectMapper objectMapper,
+                             WcdkProcessConnectionConfig connectionConfig,
+                             WcdkProcessServerConfig serverConfig) {
+        this(webClient, objectMapper, connectionConfig, serverConfig, null);
     }
 
     public Mono<Void> registerClient(Set<String> processBeanNames) {
@@ -60,6 +80,7 @@ public class WcdkProcessClient {
                 .username(connectionConfig.getUsername())
                 .password(connectionConfig.getPassword())
                 .callbackUrl(connectionConfig.getCallbackUrl())
+                .serviceName(connectionConfig.getServiceName())
                 .authFlg(connectionConfig.getAuthFlg())
                 .processBeanNames(processBeanNames)
                 .build();
@@ -129,18 +150,20 @@ public class WcdkProcessClient {
     }
 
     private <T> Mono<T> executeJson(String method, String path, Object body, JavaType dataType) {
-        WebClient.RequestBodySpec request = webClient.method(org.springframework.http.HttpMethod.valueOf(method))
-                .uri(path)
-                .accept(MediaType.APPLICATION_JSON)
-                .contentType(MediaType.APPLICATION_JSON)
-                .header(HttpHeaders.AUTHORIZATION, buildAuthorization());
-        WebClient.ResponseSpec responseSpec;
-        if (body == null || "GET".equals(method) || "DELETE".equals(method)) {
-            responseSpec = request.retrieve();
-        } else {
-            responseSpec = request.bodyValue(body).retrieve();
-        }
-        return readResponse(responseSpec, dataType);
+        return resolveRequestUrl(path).flatMap(url -> {
+            WebClient.RequestBodySpec request = webClient.method(org.springframework.http.HttpMethod.valueOf(method))
+                    .uri(url)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header(HttpHeaders.AUTHORIZATION, buildAuthorization());
+            WebClient.ResponseSpec responseSpec;
+            if (body == null || "GET".equals(method) || "DELETE".equals(method)) {
+                responseSpec = request.retrieve();
+            } else {
+                responseSpec = request.bodyValue(body).retrieve();
+            }
+            return readResponse(responseSpec, dataType);
+        });
     }
 
     private <T> Mono<T> executeMultipart(String path,
@@ -169,14 +192,16 @@ public class WcdkProcessClient {
                 .filename(fileName)
                 .contentType(MediaType.parseMediaType(actualContentType));
         MultiValueMap<String, org.springframework.http.HttpEntity<?>> multipartBody = builder.build();
-        WebClient.ResponseSpec responseSpec = webClient.post()
-                .uri(path)
-                .accept(MediaType.APPLICATION_JSON)
-                .contentType(MediaType.MULTIPART_FORM_DATA)
-                .header(HttpHeaders.AUTHORIZATION, buildAuthorization())
-                .body(BodyInserters.fromMultipartData(multipartBody))
-                .retrieve();
-        return readResponse(responseSpec, dataType);
+        return resolveRequestUrl(path).flatMap(url -> {
+            WebClient.ResponseSpec responseSpec = webClient.post()
+                    .uri(url)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .header(HttpHeaders.AUTHORIZATION, buildAuthorization())
+                    .body(BodyInserters.fromMultipartData(multipartBody))
+                    .retrieve();
+            return readResponse(responseSpec, dataType);
+        });
     }
 
     private void validateMultipartRequest(String filePartName, String fileName, byte[] fileContent) {
@@ -189,6 +214,50 @@ public class WcdkProcessClient {
         if (fileContent == null || fileContent.length == 0) {
             throw new IllegalArgumentException("文件内容不能为空");
         }
+    }
+
+    private Mono<String> resolveRequestUrl(String path) {
+        String baseUrl = trimTrailingSlash(serverConfig.getBaseUrl());
+        if (!baseUrl.startsWith(LOAD_BALANCER_SCHEME)) {
+            return Mono.just(path);
+        }
+        String servicePath = baseUrl.substring(LOAD_BALANCER_SCHEME.length());
+        int pathIndex = servicePath.indexOf('/');
+        String serviceName = pathIndex < 0 ? servicePath : servicePath.substring(0, pathIndex);
+        String contextPath = pathIndex < 0 ? "" : servicePath.substring(pathIndex);
+        if (!StringUtils.hasText(serviceName)) {
+            return Mono.error(new WcdkProcessClientException("lb:// 地址必须指定服务名"));
+        }
+        ReactiveLoadBalancer.Factory<ServiceInstance> loadBalancerFactory =
+                loadBalancerFactoryProvider == null ? null : loadBalancerFactoryProvider.getIfAvailable();
+        if (loadBalancerFactory == null) {
+            return Mono.error(new WcdkProcessClientException("使用 lb:// endpoint 时必须引入并配置 Spring Cloud LoadBalancer"));
+        }
+        ReactiveLoadBalancer<ServiceInstance> loadBalancer = loadBalancerFactory.getInstance(serviceName.trim());
+        if (loadBalancer == null) {
+            return Mono.error(new WcdkProcessClientException("未找到服务负载均衡器：" + serviceName.trim()));
+        }
+        return Mono.from(loadBalancer.choose(new DefaultRequest<>(new DefaultRequestContext())))
+                .filter(Response::hasServer)
+                .map(Response::getServer)
+                .switchIfEmpty(Mono.error(new WcdkProcessClientException("未从注册中心找到服务实例：" + serviceName.trim())))
+                .map(serviceInstance -> buildLoadBalancedUrl(serviceInstance, contextPath, path));
+    }
+
+    private String buildLoadBalancedUrl(ServiceInstance serviceInstance, String contextPath, String path) {
+        URI uri = serviceInstance.getUri();
+        String baseUrl = trimTrailingSlash(uri.toString());
+        String normalizedContextPath = trimTrailingSlash(contextPath);
+        String normalizedPath = StringUtils.hasText(path) ? (path.startsWith("/") ? path : "/" + path) : "";
+        return baseUrl + normalizedContextPath + normalizedPath;
+    }
+
+    private String trimTrailingSlash(String value) {
+        String result = value == null ? "" : value.trim();
+        while (result.endsWith("/")) {
+            result = result.substring(0, result.length() - 1);
+        }
+        return result;
     }
 
     private <T> Mono<T> readResponse(WebClient.ResponseSpec responseSpec, JavaType dataType) {

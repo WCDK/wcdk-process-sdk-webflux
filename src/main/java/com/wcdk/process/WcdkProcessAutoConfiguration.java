@@ -10,9 +10,14 @@ import org.springframework.boot.autoconfigure.AutoConfigureOrder;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.cloud.client.ServiceInstance;
+import org.springframework.cloud.client.loadbalancer.reactive.ReactiveLoadBalancer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.Ordered;
+import org.springframework.core.env.Environment;
+import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
@@ -29,7 +34,7 @@ public class WcdkProcessAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public WcdkProcessConnectionConfig wcdkProcessConnectionConfig(WcdkProcessProperties properties) {
+    public WcdkProcessConnectionConfig wcdkProcessConnectionConfig(WcdkProcessProperties properties, Environment environment) {
         return WcdkProcessConnectionConfig.builder()
                 .clientId(properties.getClientId())
                 .clientName(properties.getClientName())
@@ -37,6 +42,7 @@ public class WcdkProcessAutoConfiguration {
                 .username(properties.getUsername())
                 .password(properties.getPassword())
                 .callbackUrl(properties.getCallbackUrl())
+                .serviceName(resolveServiceName(properties, environment))
                 .authFlg(properties.getAuthFlg())
                 .timeout(Duration.ofSeconds(properties.getTimeoutSeconds()))
                 .activeReportInterval(Duration.ofSeconds(properties.getActiveReport()))
@@ -64,9 +70,10 @@ public class WcdkProcessAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public WebClient wcdkProcessWebClient(WebClient.Builder builder, WcdkProcessServerConfig serverConfig) {
-        return builder
-                .baseUrl(trimTrailingSlash(serverConfig.getBaseUrl()))
-                .build();
+        if (isLoadBalancerEndpoint(serverConfig.getBaseUrl())) {
+            return builder.build();
+        }
+        return builder.baseUrl(trimTrailingSlash(serverConfig.getBaseUrl())).build();
     }
 
     @Bean
@@ -80,8 +87,9 @@ public class WcdkProcessAutoConfiguration {
     public WcdkProcessClient wcdkProcessClient(WebClient wcdkProcessWebClient,
                                               ObjectMapper objectMapper,
                                               WcdkProcessConnectionConfig connectionConfig,
-                                              WcdkProcessServerConfig serverConfig) {
-        return new WcdkProcessClient(wcdkProcessWebClient, objectMapper, connectionConfig, serverConfig);
+                                              WcdkProcessServerConfig serverConfig,
+                                              ObjectProvider<ReactiveLoadBalancer.Factory<ServiceInstance>> loadBalancerFactoryProvider) {
+        return new WcdkProcessClient(wcdkProcessWebClient, objectMapper, connectionConfig, serverConfig, loadBalancerFactoryProvider);
     }
 
     @Bean
@@ -126,5 +134,16 @@ public class WcdkProcessAutoConfiguration {
             result = result.substring(0, result.length() - 1);
         }
         return result;
+    }
+
+    private boolean isLoadBalancerEndpoint(String value) {
+        return StringUtils.hasText(value) && value.trim().startsWith("lb://");
+    }
+
+    private String resolveServiceName(WcdkProcessProperties properties, Environment environment) {
+        if (StringUtils.hasText(properties.getServiceName())) {
+            return properties.getServiceName().trim();
+        }
+        return environment.getProperty("spring.application.name");
     }
 }

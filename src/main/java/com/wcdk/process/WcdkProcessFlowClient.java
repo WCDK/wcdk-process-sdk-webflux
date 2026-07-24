@@ -19,6 +19,8 @@ import com.wcdk.process.dto.StartProcessRequest;
 import com.wcdk.process.dto.TaskCompleteRequest;
 import com.wcdk.process.dto.TaskResponse;
 import com.wcdk.process.dto.WcdkProcessClientResponse;
+import com.wcdk.process.dto.WcdkProcessConnectionEvent;
+import com.wcdk.process.dto.WcdkProcessRpcCallbackResponse;
 import org.springframework.util.StringUtils;
 import reactor.core.publisher.Mono;
 
@@ -295,6 +297,11 @@ public class WcdkProcessFlowClient {
 
     public Mono<Boolean> detectClient(String clientId) {
         return wcdkProcessClient.post(WCDK_PROCESS_CLIENT_PATH + "/" + clientId + "/detect", null, Boolean.class);
+    }
+
+    public Mono<List<WcdkProcessRpcCallbackResponse>> rpcCallback(WcdkProcessConnectionEvent request) {
+        return wcdkProcessClient.post(WCDK_PROCESS_CLIENT_PATH + "/rpc/callback", request, new TypeReference<>() {
+        });
     }
 
     public Mono<Void> removeClient(String clientId) {

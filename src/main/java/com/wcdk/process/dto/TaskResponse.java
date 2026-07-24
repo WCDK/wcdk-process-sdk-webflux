@@ -3,6 +3,8 @@ package com.wcdk.process.dto;
 import lombok.Builder;
 import lombok.Data;
 
+import java.util.List;
+
 /**
  * @auther WCDK
  * @date 2026/7/10
@@ -17,6 +19,8 @@ public class TaskResponse {
     private String taskName;
 
     private String currentTaskName;
+
+    private List<ProcessTaskInfoResponse> parallelTasks;
 
     private String assignee;
 

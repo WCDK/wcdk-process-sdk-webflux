@@ -1,6 +1,7 @@
 package com.wcdk.process.support;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.wcdk.process.annotation.ProcessBean;
 import com.wcdk.process.dto.WcdkProcessConnectionEvent;
 import jakarta.annotation.PostConstruct;
@@ -128,13 +129,15 @@ public class ProcessBeanRegistry {
             if (WcdkProcessConnectionEvent.class.isAssignableFrom(parameterType)) {
                 return event;
             }
-            Map<String, Object> payload = event == null || event.getPayload() == null
+            Map<String, Object> requestBody = event == null
                     ? new LinkedHashMap<>()
-                    : event.getPayload();
+                    : objectMapper.convertValue(event, Map.class);
             if (Map.class.isAssignableFrom(parameterType) || Object.class.equals(parameterType)) {
-                return payload;
+                return requestBody;
             }
-            return objectMapper.convertValue(payload, parameterType);
+            return objectMapper.copy()
+                    .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+                    .convertValue(requestBody, parameterType);
         }
     }
 }

@@ -25,8 +25,9 @@ public class WcdkProcessClientDefinition {
 
     private String callbackUrl;
 
+    private String serviceName;
+
     private Map<String, String> callbackHeaders;
 
     private Set<String> processBeanNames;
 }
-

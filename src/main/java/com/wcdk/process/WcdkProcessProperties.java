@@ -34,6 +34,8 @@ public class WcdkProcessProperties {
 
     private String callbackUrl;
 
+    private String serviceName;
+
     @NotNull
     private Long timeoutSeconds = 30L;
 

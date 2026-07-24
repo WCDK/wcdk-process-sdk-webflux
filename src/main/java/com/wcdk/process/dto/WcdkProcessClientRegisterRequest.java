@@ -24,6 +24,8 @@ public class WcdkProcessClientRegisterRequest {
 
     private String callbackUrl;
 
+    private String serviceName;
+
     private String username;
 
     private String password;
