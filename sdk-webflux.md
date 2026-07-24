@@ -53,7 +53,19 @@ wcdk:
     auth-flg: WCDK
     active-report: 10
 ```
-
+```微服务配置
+wcdk:
+  process:
+    client-id: ${spring.application.name}
+    client-name: ${spring.application.name}
+    service-name: ${spring.application.name}
+    endpoint: lb://wcdk-process
+    timeout-seconds: 30
+    username: admin
+    password: admin123
+    auth-flg: WCDK
+    active-report: 10
+```
 | 配置项 | 必填 | 默认值 | 说明 |
 |---|---:|---|---|
 | `client-id` | 是 | 无 | 业务系统客户端唯一标识 |
