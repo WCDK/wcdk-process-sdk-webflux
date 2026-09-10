@@ -8,7 +8,7 @@ import java.util.List;
 
 /**
  * @auther WCDK
- * @date 2026/7/10
+ *
  * @version 1.0
  **/
 @Data
@@ -16,6 +16,12 @@ import java.util.List;
 public class DeploymentResponse {
 
     private String deploymentId;
+
+    private String designDeploymentId;
+
+    private String publishedDeploymentId;
+
+    private String processDefinitionId;
 
     private String deploymentName;
 

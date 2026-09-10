@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * @auther WCDK
- * @date 2026/7/16
+ *
  * @version 1.0
  **/
 class WcdkProcessClientAutoRegisterRunnerTests {

@@ -9,7 +9,7 @@ import java.util.Map;
 
 /**
  * @auther WCDK
- * @date 2026/7/16
+ *
  * @version 1.0
  **/
 @Data
@@ -19,6 +19,20 @@ import java.util.Map;
 public class ProcessRequestCreateRequest {
 
     private String processDefinitionKey;
+
+    private String processDefinitionId;
+
+    private String requestId;
+
+    private String businessKey;
+
+    private String businessTitle;
+
+    private String formVersionId;
+
+    private Long expectedRevision;
+
+    private String idempotencyKey;
 
     private String taskName;
 

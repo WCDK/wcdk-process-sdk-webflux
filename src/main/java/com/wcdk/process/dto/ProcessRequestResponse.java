@@ -9,12 +9,26 @@ import java.util.Map;
 
 /**
  * @auther WCDK
- * @date 2026/7/16
+ *
  * @version 1.0
  **/
 @Data
 @Builder
 public class ProcessRequestResponse {
+
+    private String requestId;
+
+    private String tenantId;
+
+    private String publishedDeploymentId;
+
+    private String formVersionId;
+
+    private Integer round;
+
+    private Long stateSequence;
+
+    private String businessOutcome;
 
     private Long id;
 

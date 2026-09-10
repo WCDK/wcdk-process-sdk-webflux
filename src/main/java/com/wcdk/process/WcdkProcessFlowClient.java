@@ -14,6 +14,13 @@ import com.wcdk.process.dto.ProcessDesignerExportResponse;
 import com.wcdk.process.dto.ProcessInstanceResponse;
 import com.wcdk.process.dto.ProcessRequestApproveRequest;
 import com.wcdk.process.dto.ProcessRequestCreateRequest;
+import com.wcdk.process.dto.ProcessRequestDraftSaveRequest;
+import com.wcdk.process.dto.ProcessRequestSubmitRequest;
+import com.wcdk.process.dto.ProcessRequestClaimRequest;
+import com.wcdk.process.dto.ProcessRequestApprovalRequest;
+import com.wcdk.process.dto.ProcessRequestRejectRequest;
+import com.wcdk.process.dto.ProcessRequestResubmitRequest;
+import com.wcdk.process.dto.ProcessPublishRequest;
 import com.wcdk.process.dto.ProcessRequestResponse;
 import com.wcdk.process.dto.StartProcessRequest;
 import com.wcdk.process.dto.TaskCompleteRequest;
@@ -35,7 +42,7 @@ import java.util.Map;
 
 /**
  * @auther WCDK
- * @date 2026/7/16
+ *
  * @version 1.0
  **/
 public class WcdkProcessFlowClient {
@@ -64,8 +71,36 @@ public class WcdkProcessFlowClient {
         return wcdkProcessClient.post(PROCESS_REQUEST_PATH, request, ProcessRequestResponse.class);
     }
 
+    public Mono<ProcessRequestResponse> saveDraft(ProcessRequestDraftSaveRequest request) {
+        return wcdkProcessClient.post(PROCESS_REQUEST_PATH + "/draft", request, ProcessRequestResponse.class);
+    }
+
     public Mono<ProcessRequestResponse> submitProcessRequest(Long id) {
         return wcdkProcessClient.post(PROCESS_REQUEST_PATH + "/" + id + "/submit", null, ProcessRequestResponse.class);
+    }
+
+    public Mono<ProcessRequestResponse> submitProcessRequest(ProcessRequestSubmitRequest request) {
+        return wcdkProcessClient.post(PROCESS_REQUEST_PATH + "/submit", request, ProcessRequestResponse.class);
+    }
+
+    public Mono<Void> claimTask(ProcessRequestClaimRequest request) {
+        return wcdkProcessClient.postForVoid(PROCESS_REQUEST_PATH + "/task/claim", request);
+    }
+
+    public Mono<Void> approveTask(ProcessRequestApprovalRequest request) {
+        return wcdkProcessClient.postForVoid(PROCESS_REQUEST_PATH + "/task/approve", request);
+    }
+
+    public Mono<Void> rejectTask(ProcessRequestRejectRequest request) {
+        return wcdkProcessClient.postForVoid(PROCESS_REQUEST_PATH + "/task/reject", request);
+    }
+
+    public Mono<ProcessRequestResponse> resubmit(ProcessRequestResubmitRequest request) {
+        return wcdkProcessClient.post(PROCESS_REQUEST_PATH + "/resubmit", request, ProcessRequestResponse.class);
+    }
+
+    public Mono<DeploymentResponse> publish(ProcessPublishRequest request) {
+        return wcdkProcessClient.post(PROCESS_REQUEST_PATH + "/publish", request, DeploymentResponse.class);
     }
 
     public Mono<ProcessRequestResponse> getProcessRequest(Long id) {
